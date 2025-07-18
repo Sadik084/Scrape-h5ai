@@ -5,10 +5,11 @@ from tqdm import tqdm
 import threading
 import time
 import html
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
+import collections
 
+HOST = "put_your_host_link"
 
-HOST = ""
 all_links = []
 lock = threading.Lock()
 visited = set()
@@ -54,22 +55,15 @@ def scrape(path=""):
         executor.map(scrape, folders)
 
 def generate_html(file_links, filename="index.html"):
-    import collections
-    import html
-
-    # Organize links by parent folder
     folders = collections.defaultdict(list)
     for name, url in file_links:
-        # Extract folder path by removing filename from URL path
-        # URL format: https://server1.ftpbd.net/FTP-1/{platform}/{folder}/{file}
         parts = url.split('/')
         if len(parts) > 6:
-            folder = '/'.join(parts[5:-1])  # e.g. FTP-1/platform/folder
+            folder = '/'.join(parts[5:-1])
         else:
             folder = "root"
         folders[folder].append((name, url))
 
-    # Sort folders and files for nicer view
     folders = dict(sorted(folders.items()))
     for k in folders:
         folders[k].sort()
@@ -123,7 +117,6 @@ a:hover {{
 <div id="fileList">
 """
 
-    # Build collapsible folders and links
     for folder, items in folders.items():
         safe_folder = html.escape(unquote(folder))
         html_content += f'<details class="folder" open>\n<summary>{safe_folder}</summary>\n<ul>\n'
@@ -181,19 +174,32 @@ function filterList() {
     with open(filename, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-# Run scraper with progress bar and timing
+def save_links_grouped(file_links, filename="links.txt"):
+    folders = collections.defaultdict(list)
+    for name, url in file_links:
+        path = urlparse(url).path
+        parts = path.strip('/').split('/')
+        if len(parts) > 1:
+            folder = unquote(parts[-2])  # decode folder name here
+        else:
+            folder = "root"
+        folders[folder].append(url)
+
+    with open(filename, "w", encoding="utf-8") as f:
+        for folder, urls in folders.items():
+            f.write(f"{folder}:\n")
+            for url in urls:
+                f.write(f"  {url}\n")  # two spaces before each link
+            f.write("\n")
+
 if __name__ == "__main__":
     start = time.time()
     progress_bar = tqdm(desc="Scraping files", unit="file", dynamic_ncols=True)
     scrape()
     progress_bar.close()
 
-    # Save links.txt with only URLs (if you want, can save names too)
-    with open("links.txt", "w", encoding="utf-8") as f:
-        for name, url in all_links:
-            f.write(url + "\n")
+    save_links_grouped(all_links)
 
-    # Generate index.html for clickable browsing
     generate_html(all_links)
 
     end = time.time()
